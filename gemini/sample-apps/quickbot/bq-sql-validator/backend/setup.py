@@ -34,8 +34,9 @@ load_dotenv()
 
 try:
     print("Setting up GCS... \n")
-    project_id = "poc-env-aks-bq-admin"
-    location = "us-central1"
+    project_id = os.getenv("_PROJECT_ID")
+    location = os.getenv("_REGION")
+
     storage_client = GCSClient()
 
     bucket = create_bucket(f"quick-bot-{project_id}-sql-validator-bucket", location, storage_client)

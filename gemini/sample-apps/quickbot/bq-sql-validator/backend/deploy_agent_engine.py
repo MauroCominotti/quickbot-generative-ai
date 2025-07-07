@@ -74,8 +74,11 @@ def setup_remote_agent(bucket: Bucket) -> str | None:
     env_vars = {}
 
     # Retrieve configuration directly from environment variables
-    project_id = "poc-env-aks-bq-admin" 
-    location = "us-central1"
+
+    project_id = os.getenv("_PROJECT_ID")
+    location = os.getenv("_REGION")
+    bucket.name = os.getenv("STAGING_BUCKET")
+
     # Sample Scenario Path - Default is an empty itinerary
     # This will be loaded upon first user interaction.
     # Uncomment one of the two, or create your own.

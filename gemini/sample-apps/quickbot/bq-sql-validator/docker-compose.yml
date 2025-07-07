@@ -21,21 +21,22 @@ services:
       dockerfile: Dockerfile.local
       args:
         IS_FIRST_DEPLOYMENT: "True"
-        _PROJECT_ID: "poc-env-aks-bq-admin"
+        _PROJECT_ID: "my-project-id"
         _REGION: "us-central1"
         ENVIRONMENT: development
         FRONTEND_URL: http://localhost:4200
         BIG_QUERY_DATASET: bigquery_translation_validator
         _CHATBOT_NAME: my_quickbot_bq_translation_validator
-        _ADK_GOOGLE_PLACES_API_KEY: your-google-maps-places-apikey
     container_name: quickbot-bq-translation-validator-backend
     ports:
       - "8080:8080"
     volumes:
       - ./backend:/app
       # Mount the gcloud ADC directory. Replace with the correct path for your OS if different. :ro - read-only for better security
-      - /tmp/tmp.0OSt3cJblF/:/root/.config/gcloud:ro # Linux/macOS example:
+      
+      - ~/.config/gcloud/:/root/.config/gcloud:ro # Linux/macOS example:
       # - %APPDATA%/gcloud:/root/.config/gcloud:ro # Windows example:
+      # - /tmp/tmp.0OSt3cJblF/:/root/.config/gcloud:ro # When running from Cloud Shell Example:
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: "/root/.config/gcloud/application_default_credentials.json"
     restart: unless-stopped
@@ -59,6 +60,7 @@ secrets:
   gcp_credentials: # This ID must match the one used in services.backend.build.secrets
     # Path to your Google Application Default Credentials JSON file on the HOST machine.
     # Replace with the correct path for your OS if different.
-    file: /tmp/tmp.0OSt3cJblF/application_default_credentials.json
+    file: ~/.config/gcloud/application_default_credentials.json
+    # file: /tmp/tmp.0OSt3cJblF/application_default_credentials.json - when ran using cloud shell
     # Windows example (you might need to adjust the target path inside the container if it's a Linux container):
     # - %APPDATA%/gcloud/application_default_credentials.json

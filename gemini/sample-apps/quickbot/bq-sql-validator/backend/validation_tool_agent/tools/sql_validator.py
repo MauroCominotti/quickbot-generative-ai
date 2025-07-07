@@ -119,10 +119,10 @@ def run_sql_validation(gcs_source_folder: str, gcs_target_folder: str,source_dat
         A batch id where the results are stored
     """
     try:
-        GCP_PROJECT_ID = "poc-env-aks-bq-admin"
-        GCP_LOCATION = "us-central1"
-        validation_output_table = "poc-env-aks-bq-admin.gemini_sql_validator.validation_output"
-        model_name = "gemini-2.5-flash-preview-04-17"
+        GCP_PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        GCP_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION")
+        validation_output_table = os.environ.get("VALIDATION_OUTPUT_TABLE")
+        model_name = "gemini-2.5-pro"
         create_bigquery_table_if_not_exists(validation_output_table)
 
         storage_client = storage.Client()
