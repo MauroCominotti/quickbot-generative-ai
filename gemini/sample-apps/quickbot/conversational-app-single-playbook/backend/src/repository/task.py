@@ -22,17 +22,22 @@ Requires the following environment variables to be set:
     - TASK_QUEUE_NAME: The name of the Cloud Tasks queue.
     - FUNCTION_URL: The URL of the HTTP target (e.g., a Cloud Function)
                     that the task will invoke.
+    - SERVICE_ACCOUNT_EMAIL: The service account email used by Cloud Tasks to
+                             mint an OIDC token for authenticated Cloud
+                             Function invocation.
 """
 
-from google.cloud.tasks_v2 import CloudTasksClient, HttpMethod
-import google.auth
-from src.model.event import IntentCreateEvent
 from json import dumps
 from os import getenv
+
+import google.auth
+from google.cloud.tasks_v2 import CloudTasksClient, HttpMethod
+from src.model.event import IntentCreateEvent
 
 LOCATION = "us-central1"
 INTENT_CREATION_QUEUE = getenv("TASK_QUEUE_NAME")
 URL = getenv("FUNCTION_URL")
+SERVICE_ACCOUNT_EMAIL = getenv("SERVICE_ACCOUNT_EMAIL")
 
 
 def get_project_id():
@@ -91,27 +96,42 @@ class TaskRepository:
             google.api_core.exceptions.GoogleAPICallError: If there's an issue
                 communicating with the Cloud Tasks API (e.g., queue not found,
                 permission errors).
-            ValueError: If required configuration (queue, URL) is missing.
-                        (Raised during __init__)
+            ValueError: If required configuration (TASK_QUEUE_NAME, FUNCTION_URL,
+                or SERVICE_ACCOUNT_EMAIL) is missing.
             RuntimeError: If the project ID could not be determined.
                           (Raised during __init__)
         """
         # Construct the fully qualified queue name.
         project_id = get_project_id()
-        parent = self.client.queue_path(
-            project_id, LOCATION, INTENT_CREATION_QUEUE
-        )
+        queue_name = INTENT_CREATION_QUEUE or getenv("TASK_QUEUE_NAME")
+        url = URL or getenv("FUNCTION_URL")
+        service_account_email = SERVICE_ACCOUNT_EMAIL or getenv("SERVICE_ACCOUNT_EMAIL")
 
+        if not queue_name or not url:
+            raise ValueError(
+                "TASK_QUEUE_NAME and FUNCTION_URL environment variables must be set."
+            )
+        if not service_account_email:
+            raise ValueError(
+                "SERVICE_ACCOUNT_EMAIL environment variable must be set to "
+                "authenticate Cloud Tasks HTTP requests with an OIDC token."
+            )
+
+        parent = self.client.queue_path(project_id, LOCATION, queue_name)
+
+        converted_payload = dumps(event.to_dict()).encode()
         task = {
             "http_request": {
                 "http_method": HttpMethod.POST,
-                "url": URL,
+                "url": url,
                 "headers": {"Content-type": "application/json"},
+                "body": converted_payload,
+                "oidc_token": {
+                    "service_account_email": service_account_email,
+                    "audience": url,
+                },
             }
         }
-
-        converted_payload = dumps(event.to_dict()).encode()
-        task["http_request"]["body"] = converted_payload
         response = self.client.create_task(
             request={"parent": parent, "task": task}
         )

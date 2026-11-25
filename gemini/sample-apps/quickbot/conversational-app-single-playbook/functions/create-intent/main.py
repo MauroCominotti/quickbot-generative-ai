@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 from datetime import datetime
 from threading import Thread
 from uuid import uuid4
@@ -45,22 +46,36 @@ def create_intent_index(request: Request):
         return jsonify({"error": "Method not allowed"}), 405
     try:
         request_json = request.get_json()
+        if not isinstance(request_json, dict):
+            return jsonify({"error": "Bad Request"}), 400
         intent_name = request_json.get("intent_name")
         index_resource = request_json.get("index_endpoint_resource")
     except Exception:
+        return jsonify({"error": "Bad Request"}), 400
+
+    if (
+        not isinstance(intent_name, str)
+        or not intent_name.strip()
+        or not isinstance(index_resource, str)
+        or not index_resource.strip()
+    ):
         return jsonify({"error": "Bad Request"}), 400
 
     print(f"Event decoded {request_json}", intent_name, index_resource)
     big_query_repository = BigQueryRepository()
     gcs_repository = CloudStorageRepository(big_query_repository.client.project)
 
+    intent = None
+    created_index = None
     try:
         results = big_query_repository.get_row_by_id(
             INTENTS_TABLE, INTENTS_TABLE_ID_COLUMN, intent_name
         )
-        intent = None
         for row in results:
             intent = Intent.__from_row__(row)
+
+        if intent is None:
+            return jsonify({"error": "Intent not found"}), 404
 
         index_endpoint = MatchingEngineIndexEndpoint(index_resource)
 
@@ -77,11 +92,11 @@ def create_intent_index(request: Request):
         )
         chunks = chunk_service.generate_chunks()
 
-        for index, chunk in enumerate(chunks):
+        for chunk_index, chunk in enumerate(chunks):
             embedding = create_embeddings(chunk)
 
             if embedding is not None:
-                doc_id = f"{intent.name}-{index}.txt"
+                doc_id = f"{intent.name}-{chunk_index}.txt"
                 embeddings.append(
                     Embedding(
                         id=doc_id,
@@ -103,27 +118,31 @@ def create_intent_index(request: Request):
         print(f"Embeddings created for {[e.id for e in embeddings]}")
         print(f"Uploading embeddings {intent.name}/{EMBEDDINGS_FILE}")
         gcs_repository.create(
-            f"{EMBEDDINGS_FOLDER}/{intent.name}/{EMBEDDINGS_FILE}", index_embeddings
+            f"{EMBEDDINGS_FOLDER}/{intent.name}/{EMBEDDINGS_FILE}",
+            index_embeddings,
         )
 
-        index = create_index(
+        created_index = create_index(
             index_unique_name,
             intent.name,
             gcs_repository.bucket_name,
         )
-        big_query_repository.update_intent_status(intent_name, "3")
+        big_query_repository.update_intent_status(intent.name, "3")
         print("Uploading text chunks to bigquery...")
         big_query_repository.insert_rows(EMBEDDINGS_TABLE, embeddings)
-        Thread(target=deploy_index_endpoint, args=(index_endpoint, index)).start()
+        Thread(
+            target=deploy_index_endpoint, args=(index_endpoint, created_index)
+        ).start()
         return jsonify({"message": "JSON received and processed"}), 200
 
     except Exception as e:
-        if index:
-            big_query_repository.update_intent_status(intent_name, "4")
-        else:
-            big_query_repository.update_intent_status(intent_name, "2")
-        print(str(e))
-        return jsonify({"error": str(e)}), 500
+        if intent is not None:
+            if created_index:
+                big_query_repository.update_intent_status(intent.name, "4")
+            else:
+                big_query_repository.update_intent_status(intent.name, "2")
+        logging.exception("Error processing create_intent_index: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 def create_embeddings(chunk: str) -> list[float]:

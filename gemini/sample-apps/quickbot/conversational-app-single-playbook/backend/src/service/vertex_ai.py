@@ -118,11 +118,17 @@ class VertexAIService:
         query = f"""
             SELECT text, id
              FROM `{BIG_QUERY_DATASET}.{EMBEDDINGS_TABLE}`
-             WHERE id IN {str(chunk_ids).replace("[", "(").replace("]", ")")}
-             AND index = "{index_name}";
+             WHERE id IN UNNEST(@chunk_ids)
+             AND `index` = @index_name;
         """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter("chunk_ids", "STRING", chunk_ids),
+                bigquery.ScalarQueryParameter("index_name", "STRING", index_name),
+            ]
+        )
 
-        rows = self.client.query(query).result()
+        rows = self.client.query(query, job_config=job_config).result()
         texts = []
 
         for row in rows:
